@@ -67,7 +67,7 @@ function useBreathing(
   const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(0);
-  
+
   const config = BREATHING_TECHNIQUES[technique];
   const totalDuration = durationMinutes * 60 * 1000;
   const startTimeRef = useRef<number>(0);
@@ -75,26 +75,26 @@ function useBreathing(
   const animationFrameRef = useRef<number>(0);
 
   const currentPhase = config.phases[currentPhaseIndex];
-  
+
   const tick = useCallback(() => {
     const now = Date.now();
     const elapsed = now - startTimeRef.current;
     const phaseElapsed = now - phaseStartTimeRef.current;
-    
+
     // Update time remaining
     setTimeRemaining(Math.max(0, totalDuration - elapsed));
-    
+
     // Check if session is complete
     if (elapsed >= totalDuration) {
       setIsActive(false);
       setProgress(1);
       return;
     }
-    
+
     // Update phase progress
     const phaseProgress = Math.min(phaseElapsed / currentPhase.duration, 1);
     setProgress(phaseProgress);
-    
+
     // Move to next phase if current is complete
     if (phaseElapsed >= currentPhase.duration) {
       const nextIndex = (currentPhaseIndex + 1) % config.phases.length;
@@ -102,7 +102,7 @@ function useBreathing(
       phaseStartTimeRef.current = now;
       setProgress(0);
     }
-    
+
     animationFrameRef.current = requestAnimationFrame(tick);
   }, [currentPhaseIndex, currentPhase, totalDuration, config.phases.length]);
 
@@ -194,7 +194,7 @@ const PixiOrb: React.FC<PixiOrbProps> = ({ phase, progress, isActive }) => {
     // Create the orb
     const orb = new PIXI.Graphics();
     orbRef.current = orb;
-    
+
     orb.x = 200;
     orb.y = 200;
     app.stage.addChild(orb);
@@ -209,22 +209,22 @@ const PixiOrb: React.FC<PixiOrbProps> = ({ phase, progress, isActive }) => {
 
       // Redraw orb
       orbRef.current.clear();
-      
+
       // Outer glow
       orbRef.current.beginFill(0x06b6d4, 0.1);
       orbRef.current.drawCircle(0, 0, 80 * currentScaleRef.current + 30);
       orbRef.current.endFill();
-      
+
       // Middle glow
       orbRef.current.beginFill(0x06b6d4, 0.2);
       orbRef.current.drawCircle(0, 0, 80 * currentScaleRef.current + 15);
       orbRef.current.endFill();
-      
+
       // Main orb with gradient effect
       orbRef.current.beginFill(0x0ea5e9, 0.8);
       orbRef.current.drawCircle(0, 0, 80 * currentScaleRef.current);
       orbRef.current.endFill();
-      
+
       // Inner highlight
       orbRef.current.beginFill(0x38bdf8, 0.4);
       orbRef.current.drawCircle(-10, -10, 40 * currentScaleRef.current);
@@ -277,10 +277,10 @@ interface CircularProgressProps {
   strokeWidth: number;
 }
 
-const CircularProgress: React.FC<CircularProgressProps> = ({ 
-  progress, 
-  size, 
-  strokeWidth 
+const CircularProgress: React.FC<CircularProgressProps> = ({
+  progress,
+  size,
+  strokeWidth
 }) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -336,9 +336,56 @@ function useVoiceGuidance(phase: BreathingPhase | null, isActive: boolean) {
     utterance.rate = 0.9;
     utterance.pitch = 1.0;
     utterance.volume = 0.8;
-    
+
     window.speechSynthesis.speak(utterance);
   }, [phase, isActive]);
+}
+
+// ============================================================================
+// BACKGROUND MUSIC
+// ============================================================================
+
+function useBackgroundMusic(
+  isActive: boolean,
+  enabled: boolean,
+  volume: number
+): React.RefObject<HTMLAudioElement> {
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    if (!audioRef.current) return;
+
+    if (isActive && enabled) {
+      audioRef.current.volume = volume;
+      audioRef.current.play().catch(err => {
+        console.log('Audio play prevented:', err);
+      });
+    } else {
+      audioRef.current.pause();
+    }
+  }, [isActive, enabled, volume]);
+
+  // Fade out when stopping
+  useEffect(() => {
+    if (!audioRef.current || !enabled) return;
+
+    const audio = audioRef.current;
+    if (!isActive && audio.volume > 0) {
+      const fadeOut = setInterval(() => {
+        if (audio.volume > 0.05) {
+          audio.volume = Math.max(0, audio.volume - 0.05);
+        } else {
+          audio.volume = 0;
+          audio.pause();
+          clearInterval(fadeOut);
+        }
+      }, 100);
+
+      return () => clearInterval(fadeOut);
+    }
+  }, [isActive, enabled]);
+
+  return audioRef;
 }
 
 // ============================================================================
@@ -354,10 +401,10 @@ function getTodayKey(): string {
 
 function getDailyMinutes(): number {
   if (typeof window === 'undefined') return 0;
-  
+
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) return 0;
-  
+
   try {
     const data = JSON.parse(stored);
     const todayKey = getTodayKey();
@@ -369,10 +416,10 @@ function getDailyMinutes(): number {
 
 function addDailyMinutes(minutes: number): void {
   if (typeof window === 'undefined') return;
-  
+
   const stored = localStorage.getItem(STORAGE_KEY);
   let data: Record<string, number> = {};
-  
+
   if (stored) {
     try {
       data = JSON.parse(stored);
@@ -380,10 +427,10 @@ function addDailyMinutes(minutes: number): void {
       data = {};
     }
   }
-  
+
   const todayKey = getTodayKey();
   data[todayKey] = (data[todayKey] || 0) + minutes;
-  
+
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
@@ -396,9 +443,12 @@ export default function VayuApp() {
   const [technique, setTechnique] = useState<BreathingTechnique>('box');
   const [duration, setDuration] = useState(5);
   const [dailyMinutes, setDailyMinutes] = useState(0);
+  const [musicEnabled, setMusicEnabled] = useState(true);
+  const [musicVolume, setMusicVolume] = useState(0.3);
 
   const breathing = useBreathing(technique, duration);
   useVoiceGuidance(breathing.currentPhase, breathing.isActive);
+  const audioRef = useBackgroundMusic(breathing.isActive, musicEnabled, musicVolume);
 
   // Load daily minutes on mount
   useEffect(() => {
@@ -434,10 +484,10 @@ export default function VayuApp() {
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100 font-['Crimson_Pro'] overflow-hidden">
       {/* Ambient background effects */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse" 
-             style={{ animationDuration: '8s' }} />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-500/5 rounded-full blur-3xl animate-pulse" 
-             style={{ animationDuration: '10s', animationDelay: '2s' }} />
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse"
+          style={{ animationDuration: '8s' }} />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-500/5 rounded-full blur-3xl animate-pulse"
+          style={{ animationDuration: '10s', animationDelay: '2s' }} />
       </div>
 
       <div className="relative z-10">
@@ -450,13 +500,13 @@ export default function VayuApp() {
               {/* Header */}
               <div className="text-center space-y-4">
                 <h1 className="text-7xl font-light tracking-wider text-cyan-400"
-                    style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                  style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                   Vayu
                 </h1>
                 <p className="text-slate-400 text-lg tracking-wide">
                   Journey into stillness through breath
                 </p>
-                
+
                 {/* Daily progress */}
                 <div className="inline-flex items-center gap-3 bg-slate-800/30 px-6 py-3 rounded-full border border-slate-700/50">
                   <div className="w-2 h-2 bg-teal-400 rounded-full animate-pulse" />
@@ -519,6 +569,50 @@ export default function VayuApp() {
                 </div>
               </div>
 
+              {/* Background Music Controls */}
+              <div className="space-y-4 p-6 bg-slate-800/20 rounded-2xl border border-slate-700/50">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm uppercase tracking-widest text-slate-400">
+                    Background Music
+                  </label>
+                  <button
+                    onClick={() => setMusicEnabled(!musicEnabled)}
+                    className={`
+                      relative w-14 h-7 rounded-full transition-all duration-300
+                      ${musicEnabled ? 'bg-cyan-500' : 'bg-slate-700'}
+                    `}
+                  >
+                    <div className={`
+                      absolute top-1 w-5 h-5 bg-white rounded-full transition-all duration-300
+                      ${musicEnabled ? 'left-8' : 'left-1'}
+                    `} />
+                  </button>
+                </div>
+
+                {musicEnabled && (
+                  <div className="space-y-2 animate-fade-in">
+                    <label className="block text-xs text-slate-400">
+                      Volume: {Math.round(musicVolume * 100)}%
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={musicVolume}
+                      onChange={(e) => setMusicVolume(Number(e.target.value))}
+                      className="w-full h-1 bg-slate-700 rounded-full appearance-none cursor-pointer
+                               [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 
+                               [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-cyan-400 
+                               [&::-webkit-slider-thumb]:rounded-full
+                               [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 
+                               [&::-moz-range-thumb]:bg-cyan-400 [&::-moz-range-thumb]:border-0
+                               [&::-moz-range-thumb]:rounded-full"
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Start Button */}
               <button
                 onClick={handleStart}
@@ -556,7 +650,7 @@ export default function VayuApp() {
               {/* Phase Instruction */}
               <div className="space-y-4">
                 <p className="text-4xl font-light tracking-wide text-cyan-300 min-h-[3rem]"
-                   style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                  style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                   {breathing.currentPhase?.instruction || 'Prepare yourself'}
                 </p>
                 <p className="text-slate-400 text-lg">
@@ -565,7 +659,7 @@ export default function VayuApp() {
               </div>
 
               {/* Controls */}
-              <div className="flex gap-4 justify-center">
+              <div className="flex gap-4 justify-center items-center flex-wrap">
                 {breathing.isActive ? (
                   <button
                     onClick={breathing.stop}
@@ -590,11 +684,39 @@ export default function VayuApp() {
                 >
                   End Session
                 </button>
+
+                {/* Music Toggle */}
+                <button
+                  onClick={() => setMusicEnabled(!musicEnabled)}
+                  className={`
+                    px-6 py-3 rounded-xl border transition-all duration-200
+                    ${musicEnabled
+                      ? 'bg-cyan-500/20 border-cyan-500/50 hover:bg-cyan-500/30'
+                      : 'bg-slate-800/50 border-slate-700 hover:bg-slate-700/50'
+                    }
+                  `}
+                  title={musicEnabled ? 'Music On' : 'Music Off'}
+                >
+                  {musicEnabled ? (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </button>
               </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Hidden Audio Element for Background Music */}
+      <audio ref={audioRef} loop>
+        <source src="/music.mp3" type="audio/mpeg" />
+      </audio>
 
       <style jsx global>{`
         @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600&family=Crimson+Pro:wght@300;400;500&display=swap');
